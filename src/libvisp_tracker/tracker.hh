@@ -24,7 +24,10 @@
 # include <visp/vpCameraParameters.h>
 # include <visp/vpHomogeneousMatrix.h>
 # include <visp/vpImage.h>
-# include <visp/vpMbEdgeTracker.h>
+# include <visp/vpMbTracker.h>
+#include <visp/vpMbEdgeKltTracker.h>
+# include <visp/vpMe.h>
+# include <string>
 
 namespace visp_tracker
 {
@@ -85,6 +88,7 @@ namespace visp_tracker
     image_transport::ImageTransport imageTransport_;
 
     State state_;
+    std::string trackerType_;
 
     image_t image_;
 
@@ -111,7 +115,7 @@ namespace visp_tracker
 
     vpMe movingEdge_;
     vpCameraParameters cameraParameters_;
-    vpMbEdgeTracker tracker_;
+    vpMbTracker* tracker_;
 
     unsigned lastTrackedImage_;
 

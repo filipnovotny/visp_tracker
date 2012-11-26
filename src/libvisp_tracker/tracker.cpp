@@ -23,7 +23,6 @@
 #include <visp/vpImage.h>
 #include <visp/vpImageConvert.h>
 #include <visp/vpCameraParameters.h>
-#include <visp/vpMbEdgeTracker.h>
 
 #include "conversion.hh"
 #include "callbacks.hh"
@@ -47,14 +46,17 @@ namespace visp_tracker
     res.initialization_succeed = false;
 
     // If something goes wrong, rollback all changes.
-    BOOST_SCOPE_EXIT((&res)(&tracker_)(&state_)
-		     (&lastTrackedImage_))
+    BOOST_SCOPE_EXIT((&res)(tracker_)(&state_)
+		     (&lastTrackedImage_)(&trackerType_))
       {
 	if(!res.initialization_succeed)
 	  {
-	    tracker_.resetTracker();
+          if(trackerType_=="mbt")
+	    dynamic_cast<vpMbEdgeTracker*>(tracker_)->resetTracker();
+
 	    state_ = WAITING_FOR_INITIALIZATION;
 	    lastTrackedImage_ = 0;
+
 	  }
       } BOOST_SCOPE_EXIT_END;
 
@@ -67,28 +69,28 @@ namespace visp_tracker
 
     // Load moving edges.
     vpMe movingEdge;
-    convertInitRequestToVpMe(req, tracker_, movingEdge);
+    if(trackerType_=="mbt"){
+      vpMbEdgeTracker* t = dynamic_cast<vpMbEdgeTracker*>(tracker_);
+      convertInitRequestToVpMe(req, *t, movingEdge);
+      // Update parameters.
+      visp_tracker::MovingEdgeConfig config;
+      convertVpMeToMovingEdgeConfig(movingEdge, *t, config);
+      reconfigureSrv_.updateConfig(config);
 
-    // Update parameters.
-    visp_tracker::MovingEdgeConfig config;
-    convertVpMeToMovingEdgeConfig(movingEdge, tracker_, config);
-    reconfigureSrv_.updateConfig(config);
-
-    //FIXME: not sure if this is needed.
-    movingEdge.initMask();
-
-    // Reset the tracker and the node state.
-    tracker_.resetTracker();
+      //FIXME: not sure if this is needed.
+      movingEdge.initMask();
+      // Reset the tracker and the node state.
+      t->resetTracker();
+      t->setMovingEdge(movingEdge);
+    }
     state_ = WAITING_FOR_INITIALIZATION;
     lastTrackedImage_ = 0;
-
-    tracker_.setMovingEdge(movingEdge);
 
     // Load the model.
     try
       {
 	ROS_DEBUG_STREAM("Trying to load the model: " << fullModelPath);
-	tracker_.loadModel(fullModelPath.c_str());
+	tracker_->loadModel(fullModelPath.c_str());
 	modelStream.close();
       }
     catch(...)
@@ -102,13 +104,13 @@ namespace visp_tracker
     transformToVpHomogeneousMatrix(cMo_, req.initial_cMo);
 
     // Enable covariance matrix.
-    tracker_.setCovarianceComputation(true);
+    tracker_->setCovarianceComputation(true);
 
     // Try to initialize the tracker.
     ROS_INFO_STREAM("Initializing tracker with cMo:\n" << cMo_);
     try
       {
-	tracker_.initFromPose(image_, cMo_);
+	tracker_->initFromPose(image_, cMo_);
 	ROS_INFO("Tracker successfully initialized.");
 
 	movingEdge.print();
@@ -131,7 +133,9 @@ namespace visp_tracker
       return;
 
     std::list<vpMbtDistanceLine*> linesList;
-    tracker_.getLline(linesList, 0);
+
+    if(trackerType_=="mbt")
+      dynamic_cast<vpMbEdgeTracker*>(tracker_)->getLline(linesList, 0);
 
     std::list<vpMbtDistanceLine*>::iterator linesIterator =
       linesList.begin();
@@ -196,7 +200,6 @@ namespace visp_tracker
       info_(),
       movingEdge_(),
       cameraParameters_(),
-      tracker_(),
       lastTrackedImage_(),
       checkInputs_(nodeHandle_, ros::this_node::getName()),
       cMo_ (),
@@ -210,9 +213,17 @@ namespace visp_tracker
   {
     // Set cMo to identity.
     cMo_.eye();
+    //tracker_ = new vpMbEdgeTracker();
 
     // Parameters.
     nodeHandlePrivate_.param<std::string>("camera_prefix", cameraPrefix_, "");
+    nodeHandlePrivate_.param<std::string>("tracker_type", trackerType_, "mbt");
+    if(trackerType_=="mbt")
+      tracker_ = new vpMbEdgeTracker();
+    else if(trackerType_=="klt")
+      tracker_ = new vpMbKltTracker();
+    else
+      tracker_ = new vpMbEdgeKltTracker();
 
     if (cameraPrefix_.empty ())
       {
@@ -271,15 +282,16 @@ namespace visp_tracker
 
     // Initialization.
     movingEdge_.initMask();
-    tracker_.setMovingEdge(movingEdge_);
-
-    // Dynamic reconfigure.
-    reconfigureSrv_t::CallbackType f =
-      boost::bind(&reconfigureCallback, boost::ref(tracker_),
-		  boost::ref(image_), boost::ref(movingEdge_),
-		  boost::ref(mutex_), _1, _2);
-    reconfigureSrv_.setCallback(f);
-
+    if(trackerType_=="mbt"){
+      vpMbEdgeTracker* t = dynamic_cast<vpMbEdgeTracker*>(tracker_);
+      t->setMovingEdge(movingEdge_);
+      // Dynamic reconfigure.
+      reconfigureSrv_t::CallbackType f =
+        boost::bind(&reconfigureCallback, boost::ref(*t),
+                    boost::ref(image_), boost::ref(movingEdge_),
+                    boost::ref(mutex_), _1, _2);
+      reconfigureSrv_.setCallback(f);
+    }
     // Wait for the image to be initialized.
     waitForImage();
     if (this->exiting())
@@ -310,8 +322,9 @@ namespace visp_tracker
 		"This warning is triggered is px, py, u0 or v0\n"
 		"is set to 0. or 1. (exactly).");
 
-    tracker_.setCameraParameters(cameraParameters_);
-    tracker_.setDisplayMovingEdges(false);
+    tracker_->setCameraParameters(cameraParameters_);
+    if(trackerType_=="mbt")
+      dynamic_cast<vpMbEdgeTracker*>(tracker_)->setDisplayMovingEdges(false);
 
     ROS_INFO_STREAM(cameraParameters_);
 
@@ -379,9 +392,10 @@ namespace visp_tracker
 	    if (state_ == TRACKING || state_ == LOST)
 	      try
 		{
-		  tracker_.initFromPose(image_, cMo_);
-		  tracker_.track(image_);
-		  tracker_.getPose(cMo_);
+                  if(trackerType_=="mbt")
+                    tracker_->initFromPose(image_, cMo_);
+		  tracker_->track(image_);
+		  tracker_->getPose(cMo_);
 		}
 	      catch(...)
 		{
@@ -428,7 +442,7 @@ namespace visp_tracker
 		    result->pose.pose.orientation.w =
 		      transformMsg.rotation.w;
 		    const vpMatrix& covariance =
-		      tracker_.getCovarianceMatrix();
+		      tracker_->getCovarianceMatrix();
 		    for (unsigned i = 0; i < covariance.getRows(); ++i)
 		      for (unsigned j = 0; j < covariance.getCols(); ++j)
 			{
