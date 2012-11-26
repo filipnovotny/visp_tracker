@@ -18,6 +18,7 @@
 # include <tf/transform_listener.h>
 
 # include <visp_tracker/Init.h>
+# include <visp_tracker/UpdatePose.h>
 # include <visp_tracker/MovingEdgeConfig.h>
 # include <visp_tracker/MovingEdgeSites.h>
 
@@ -25,6 +26,7 @@
 # include <visp/vpHomogeneousMatrix.h>
 # include <visp/vpImage.h>
 # include <visp/vpMbEdgeTracker.h>
+# include <visp/vpMbEdgeKltTracker.h>
 
 namespace visp_tracker
 {
@@ -39,6 +41,10 @@ namespace visp_tracker
     typedef boost::function<bool (visp_tracker::Init::Request&,
 				  visp_tracker::Init::Response& res)>
     initCallback_t;
+
+    typedef boost::function<bool (visp_tracker::UpdatePose::Request&,
+                                      visp_tracker::UpdatePose::Response& res)>
+    updatePoseCallback_t;
 
     enum State
       {
@@ -56,6 +62,8 @@ namespace visp_tracker
   protected:
     bool initCallback(visp_tracker::Init::Request& req,
 		      visp_tracker::Init::Response& res);
+    bool updatePoseCallback(visp_tracker::UpdatePose::Request& req,
+                          visp_tracker::UpdatePose::Response& res);
 
     void updateMovingEdgeSites(visp_tracker::MovingEdgeSitesPtr sites);
 
@@ -105,13 +113,15 @@ namespace visp_tracker
     ros::Publisher movingEdgeSitesPublisher_;
 
     ros::ServiceServer initService_;
+    ros::ServiceServer updatePoseService_;
 
     std_msgs::Header header_;
     sensor_msgs::CameraInfoConstPtr info_;
 
     vpMe movingEdge_;
     vpCameraParameters cameraParameters_;
-    vpMbEdgeTracker tracker_;
+    //vpMbEdgeTracker tracker_;
+    vpMbEdgeKltTracker tracker_;
 
     unsigned lastTrackedImage_;
 

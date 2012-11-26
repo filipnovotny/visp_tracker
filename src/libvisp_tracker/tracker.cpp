@@ -31,6 +31,7 @@
 #include "names.hh"
 
 #include "tracker.hh"
+#include "visp/vpDisplayX.h"
 
 // TODO:
 // - add a topic allowing to suggest an estimation of the cMo
@@ -38,6 +39,18 @@
 
 namespace visp_tracker
 {
+
+  bool Tracker::updatePoseCallback(visp_tracker::UpdatePose::Request& req,
+                          visp_tracker::UpdatePose::Response& res){
+
+    //transformToVpHomogeneousMatrix(cMo_, req.cMo);
+    //tracker_.initFromPose(image_, cMo_);
+    objectPositionHint_.transform = req.cMo;
+    state_ = LOST;
+    res.success = true;
+    return true;
+  }
+
   bool
   Tracker::initCallback(visp_tracker::Init::Request& req,
 			visp_tracker::Init::Response& res)
@@ -46,24 +59,17 @@ namespace visp_tracker
 
     res.initialization_succeed = false;
 
-    // If something goes wrong, rollback all changes.
-    BOOST_SCOPE_EXIT((&res)(&tracker_)(&state_)
-		     (&lastTrackedImage_))
-      {
-	if(!res.initialization_succeed)
-	  {
-	    tracker_.resetTracker();
-	    state_ = WAITING_FOR_INITIALIZATION;
-	    lastTrackedImage_ = 0;
-	  }
-      } BOOST_SCOPE_EXIT_END;
-
-    std::string fullModelPath;
+    std::string fullModelPath,model_path,model;
     boost::filesystem::ofstream modelStream;
 
+    ros::param::get("model_path", model_path);
+    ros::param::get("model_name", model);
+    //ros::param::get(visp_tracker::model_description_param, modelDescription);
+    fullModelPath = getModelFileFromModelName(model,model_path);
+    ROS_INFO("model path=%s",fullModelPath.c_str());
     // Load model from parameter.
-    if (!makeModelFile(modelStream, fullModelPath))
-      return true;
+    //if (!makeModelFile(modelStream, fullModelPath))
+    //  return true;
 
     // Load moving edges.
     vpMe movingEdge;
@@ -75,20 +81,28 @@ namespace visp_tracker
     reconfigureSrv_.updateConfig(config);
 
     //FIXME: not sure if this is needed.
+    ROS_INFO("init mask");
     movingEdge.initMask();
 
     // Reset the tracker and the node state.
-    tracker_.resetTracker();
+    //tracker_.resetTracker();
     state_ = WAITING_FOR_INITIALIZATION;
     lastTrackedImage_ = 0;
 
-    tracker_.setMovingEdge(movingEdge);
+    ROS_INFO("setting me");
+    //tracker_.setMovingEdge(movingEdge);
 
     // Load the model.
     try
       {
 	ROS_DEBUG_STREAM("Trying to load the model: " << fullModelPath);
-	tracker_.loadModel(fullModelPath.c_str());
+
+        std::string fullModelPath(getModelFileFromModelName(model,model_path));
+        std::string xml(getConfigurationFileFromModelName(model,model_path));
+        //tracker_.resetTracker();
+        tracker_.loadModel(fullModelPath.c_str());
+        tracker_.loadConfigFile(xml.c_str());
+
 	modelStream.close();
       }
     catch(...)
@@ -273,6 +287,15 @@ namespace visp_tracker
     movingEdge_.initMask();
     tracker_.setMovingEdge(movingEdge_);
 
+    std::string model_path,model;
+
+    ros::param::get("model_path", model_path);
+    ros::param::get("model_name", model);
+
+
+
+
+
     // Dynamic reconfigure.
     reconfigureSrv_t::CallbackType f =
       boost::bind(&reconfigureCallback, boost::ref(tracker_),
@@ -289,6 +312,8 @@ namespace visp_tracker
 
     // Tracker initialization.
     initializeVpCameraFromCameraInfo(cameraParameters_, info_);
+
+    new vpDisplayX(image_);
 
     // Double check camera parameters.
     if (cameraParameters_.get_px () == 0.
@@ -319,8 +344,15 @@ namespace visp_tracker
     initCallback_t initCallback =
       boost::bind(&Tracker::initCallback, this, _1, _2);
 
+    updatePoseCallback_t updatePoseCallback =
+          boost::bind(&Tracker::updatePoseCallback, this, _1, _2);
+
+
     initService_ = nodeHandle_.advertiseService
       (visp_tracker::init_service, initCallback);
+
+    updatePoseService_ = nodeHandle_.advertiseService
+          (visp_tracker::updatepose_service, updatePoseCallback);
   }
 
   void Tracker::spin()
@@ -343,24 +375,6 @@ namespace visp_tracker
 
 	    // If we can estimate the camera displacement using tf,
 	    // we update the cMo to compensate for robot motion.
-	    if (compensateRobotMotion_)
-	      try
-		{
-		  tf::StampedTransform stampedTransform;
-		  listener_.lookupTransform
-		    (header_.frame_id, // camera frame name
-		     header_.stamp,    // current image time
-		     header_.frame_id, // camera frame name
-		     lastHeader.stamp, // last processed image time
-		     worldFrameId_,    // frame attached to the environment
-		     stampedTransform
-		     );
-		  vpHomogeneousMatrix newMold;
-		  transformToVpHomogeneousMatrix (newMold, stampedTransform);
-		  cMo_ = newMold * cMo_;
-		}
-	      catch(tf::TransformException& e)
-		{}
 
 	    // If we are lost but an estimation of the object position
 	    // is provided, use it to try to reinitialize the system.
@@ -368,18 +382,20 @@ namespace visp_tracker
 	      {
 		// If the last received message is recent enough,
 		// use it otherwise do nothing.
-		if (ros::Time::now () - objectPositionHint_.header.stamp
-		    < ros::Duration (1.))
+		/*if (ros::Time::now () - objectPositionHint_.header.stamp
+		    < ros::Duration (1.))*/
 		  transformToVpHomogeneousMatrix
 		    (cMo_, objectPositionHint_.transform);
+		  tracker_.initFromPose(image_, cMo_);
+		  state_ = TRACKING;
 	      }
 
 	    // We try to track the image even if we are lost,
 	    // in the case the tracker recovers...
-	    if (state_ == TRACKING || state_ == LOST)
+	    if (state_ == TRACKING)
 	      try
 		{
-		  tracker_.initFromPose(image_, cMo_);
+		  //tracker_.initFromPose(image_, cMo_);
 		  tracker_.track(image_);
 		  tracker_.getPose(cMo_);
 		}
@@ -394,6 +410,9 @@ namespace visp_tracker
 	      {
 		geometry_msgs::Transform transformMsg;
 		vpHomogeneousMatrixToTransform(transformMsg, cMo_);
+		vpDisplay::display(image_);
+		tracker_.display(image_,cMo_,cameraParameters_,vpColor::none);
+		vpDisplay::flush(image_);
 
 		// Publish position.
 		if (transformationPublisher_.getNumSubscribers	() > 0)
@@ -475,6 +494,8 @@ namespace visp_tracker
 	loopRateTracking.sleep();
       }
   }
+
+
 
   // Make sure that we have an image *and* associated calibration
   // data.

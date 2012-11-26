@@ -10,6 +10,7 @@ namespace visp_tracker
   extern std::string moving_edge_sites_topic;
   extern std::string camera_velocity_topic;
   extern std::string init_service;
+  extern std::string updatepose_service;
 
   extern std::string default_model_path;
 

@@ -54,6 +54,9 @@ makeModelFile(boost::filesystem::ofstream& modelStream,
 	      std::string& fullModelPath)
 {
   std::string modelDescription;
+  ROS_INFO("visp_tracker::model_description_param=%s",visp_tracker::model_description_param.c_str());
+  ros::param::get(visp_tracker::model_description_param, modelDescription);
+  ROS_INFO("visp_tracker::model_description_param=%s",modelDescription.c_str());
   if (!ros::param::has(visp_tracker::model_description_param))
     {
       ROS_ERROR_STREAM("Failed to initialize: no model is provided.");
@@ -75,6 +78,7 @@ makeModelFile(boost::filesystem::ofstream& modelStream,
   free(tmpname);
 
   fullModelPath = path.external_file_string();
+  ROS_INFO("%s",fullModelPath.c_str());
 
   modelStream.open(path);
   if (!modelStream.good())

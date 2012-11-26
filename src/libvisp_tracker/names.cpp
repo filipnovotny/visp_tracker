@@ -9,6 +9,7 @@ namespace visp_tracker
   std::string moving_edge_sites_topic("moving_edge_sites");
   std::string camera_velocity_topic("camera_velocity");
   std::string init_service("init_tracker");
+  std::string updatepose_service("update_pose");
 
   std::string default_model_path("package://visp_tracker/models");
 
