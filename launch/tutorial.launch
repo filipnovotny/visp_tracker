@@ -20,7 +20,7 @@
   $(find visp_tracker)/bag/tutorial-static-box.bag"/>
 
  <!-- Launch the tracking node -->
-  <node pkg="visp_tracker" type="tracker" name="tracker_mbt" output="screen">
+  <node pkg="visp_tracker" type="tracker" name="tracker_mbt">
     <param name="camera_prefix" value="/wide_left/camera" />
   </node>
 
