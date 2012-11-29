@@ -41,8 +41,7 @@ namespace visp_tracker
     /// which are not critical as this is only a viewer.
     typedef message_filters::sync_policies::ApproximateTime<
       sensor_msgs::Image, sensor_msgs::CameraInfo,
-      geometry_msgs::PoseWithCovarianceStamped,
-      visp_tracker::MovingEdgeSites
+      geometry_msgs::PoseWithCovarianceStamped
       > syncPolicy_t;
 
     /// \brief Constructor.
@@ -69,8 +68,7 @@ namespace visp_tracker
     callback
     (const sensor_msgs::ImageConstPtr& imageConst,
      const sensor_msgs::CameraInfoConstPtr& infoConst,
-     const geometry_msgs::PoseWithCovarianceStamped::ConstPtr& trackingResult,
-     const visp_tracker::MovingEdgeSites::ConstPtr& sitesConst);
+     const geometry_msgs::PoseWithCovarianceStamped::ConstPtr& trackingResult);
 
     void timerCallback();
 

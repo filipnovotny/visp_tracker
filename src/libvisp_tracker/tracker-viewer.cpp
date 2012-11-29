@@ -21,6 +21,7 @@
 #include "names.hh"
 
 #include "tracker-viewer.hh"
+#include "resource_retriever/retriever.h"
 
 namespace visp_tracker
 {
@@ -68,7 +69,7 @@ namespace visp_tracker
     ros::Rate rate (1);
     while (cameraPrefix.empty ())
       {
-	if (!nodeHandle_.getParam ("camera_prefix", cameraPrefix))
+	if (!nodeHandlePrivate_.getParam ("camera_prefix", cameraPrefix))
 	  {
 	    ROS_WARN
 	      ("the camera_prefix parameter does not exist.\n"
@@ -96,7 +97,7 @@ namespace visp_tracker
     boost::filesystem::ofstream modelStream;
     std::string path;
 
-    while (!nodeHandle_.hasParam(visp_tracker::model_description_param))
+    /*while (!nodeHandle_.hasParam(visp_tracker::model_description_param))
       {
 	if (!nodeHandle_.hasParam(visp_tracker::model_description_param))
 	  {
@@ -110,13 +111,12 @@ namespace visp_tracker
 	if (this->exiting())
 	  return;
 	rate.sleep ();
-      }
+      }*/
 
-    if (!makeModelFile(modelStream, path))
-      throw std::runtime_error
-	("failed to load the model from the parameter server");
-    ROS_INFO_STREAM("Model loaded from the parameter server.");
-    vrmlPath_ = path;
+
+    std::string default_model_path;
+    nodeHandlePrivate_.getParam ("model_path", default_model_path);
+    vrmlPath_ = default_model_path;
 
     initializeTracker();
     if (this->exiting())
@@ -139,9 +139,9 @@ namespace visp_tracker
 
     synchronizer_.connectInput
       (imageSubscriber_, cameraInfoSubscriber_,
-       trackingResultSubscriber_, movingEdgeSitesSubscriber_);
+       trackingResultSubscriber_);
     synchronizer_.registerCallback(boost::bind(&TrackerViewer::callback,
-					       this, _1, _2, _3, _4));
+					       this, _1, _2, _3));
 
     // Check for synchronization every 30s.
     synchronizer_.registerCallback(boost::bind(increment, &countAll_));
@@ -150,8 +150,8 @@ namespace visp_tracker
       (boost::bind(increment, &countCameraInfo_));
     trackingResultSubscriber_.registerCallback
       (boost::bind(increment, &countTrackingResult_));
-    movingEdgeSitesSubscriber_.registerCallback
-      (boost::bind(increment, &countMovingEdgeSites_));
+    /*movingEdgeSitesSubscriber_.registerCallback
+      (boost::bind(increment, &countMovingEdgeSites_));*/
 
     timer_ = nodeHandle_.createWallTimer
       (ros::WallDuration(30.),
@@ -265,8 +265,7 @@ namespace visp_tracker
   TrackerViewer::callback
   (const sensor_msgs::ImageConstPtr& image,
    const sensor_msgs::CameraInfoConstPtr& info,
-   const geometry_msgs::PoseWithCovarianceStamped::ConstPtr& trackingResult,
-   const visp_tracker::MovingEdgeSites::ConstPtr& sites)
+   const geometry_msgs::PoseWithCovarianceStamped::ConstPtr& trackingResult)
   {
     // Copy image.
     try
@@ -280,7 +279,7 @@ namespace visp_tracker
 
     // Copy moving camera infos and edges sites.
     info_ = info;
-    sites_ = sites;
+    //sites_ = sites;
 
     // Copy cMo.
     cMo_ = vpHomogeneousMatrix();
